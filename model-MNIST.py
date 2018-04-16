@@ -9,12 +9,16 @@ from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
 import matplotlib.pyplot as plt
 import numpy as np
 import time
 
 # Fixing random state for reproducibility
-np.random.seed(19680801)
+seed = 19680801
+np.random.seed(seed)
 
 class DCGAN():
     def __init__(self):
@@ -23,7 +27,13 @@ class DCGAN():
         self.img_cols = 28
         self.channels = 1
         self.num_classes = 10
-
+        self.training_history = {
+                'D_loss': [], 
+                'D_acc': [],
+                'G_loss': [], 
+                'G_acc': [],
+                }
+        
         # While previous GAN work has used momentum to accelerate training, we used the Adam optimizer
         # (Kingma & Ba, 2014) with tuned hyperparameters. We found the suggested learning rate of 0.001,
         # to be too high, using 0.0002 instead. Additionally, we found leaving the momentum term β1 at the
@@ -149,13 +159,7 @@ class DCGAN():
         # Once instantiated, this model will include all layers required in the computation of y given x.
         return Model(img, [valid, label])
 
-    def train(self, X_train, y_train, epochs, batch_size=128, save_interval=50):
-        start = time.time()
-        
-        # Normalize values from -1 to 1
-        X_train = (X_train.astype(np.float32) - 127.5) / 127.5
-        X_train = np.expand_dims(X_train, axis=3)
-        y_train = y_train.reshape(-1, 1)
+    def train(self, X_train, y_train, epochs=200, batch_size=32, save_interval=60):
         
         half_batch = int(batch_size / 2)
         
@@ -166,13 +170,7 @@ class DCGAN():
         cw1 = {0: 1, 1: 1}
         cw2 = {i: self.num_classes / half_batch for i in range(self.num_classes)}
         cw2[self.num_classes] = 1 / half_batch
-        
-        model_history = {}
-        model_history["D_loss"]= [];
-        model_history["D_acc"]= [];
-        model_history["G_loss"]= [];
-        model_history["G_acc"]= [];
-        
+               
         for epoch in range(epochs):
             # ---------------------
             #  Train Discriminator
@@ -210,42 +208,30 @@ class DCGAN():
             # Train the generator (wants discriminator to mistake images as real)
             g_loss = self.combined.train_on_batch(noise, validity, class_weight=[cw1, cw2])
     
-            # Plot the progress
-            print ("%d [D loss: %f, acc: %.2f%% ] [G loss: %f, acc: %.2f%%]" % (epoch+1, d_loss[0], 100*d_loss[3], g_loss, 100*d_loss[4]))
-            
-            model_history["D_loss"].append(d_loss[0]);
-            model_history["D_acc"].append(100*d_loss[3]);
-            model_history["G_loss"].append(g_loss);
-            model_history["G_acc"].append(100*d_loss[4]);
+            self.training_history["D_loss"].append(d_loss[0]);
+            self.training_history["D_acc"].append(100*d_loss[3]);
+            self.training_history["G_loss"].append(g_loss);
+            self.training_history["G_acc"].append(100*d_loss[4]);
     
             # If at save interval => save generated image samples
             if epoch % save_interval == 0:
-                self.save_imgs(epoch)
-            
-        end = time.time()
-        print ("\nModel training time: %0.1fs\n" % (end - start))
-        
-        self.plot_model_history(model_history)
+                # Plot the progress
+                print ("%d: Training D [loss: %.4f, acc: %.2f%% ] - G [loss: %.4f, acc: %.2f%%]" % (epoch, d_loss[0], 100*d_loss[3], g_loss, 100*d_loss[4]))
+                self.save_imgs(epoch)        
            
-    def evaluate(self, X_test, y_test, batch_size=128):
+    def evaluate_discriminator(self, X_test, y_test):
 
-        # Normalize values from -1 to 1
-        X_test = (X_test.astype(np.float32) - 127.5) / 127.5
-        X_test = np.expand_dims(X_test, axis=3)
-        y_test = y_test.reshape(-1, 1)
-              
         valid = np.ones((y_test.shape[0], 1))
         
         # Convert labels to categorical one-hot encoding
         labels = to_categorical(y_test, num_classes=self.num_classes+1)
 
-        # ---------------------
         #  Evaluating the trained Discriminator
-        # ---------------------
-        
         scores = self.discriminator.evaluate(X_test, [valid, labels])
-        print("\nDiscriminator Test Loss:  %.2f%%" % (scores[0]))
-        print("Discriminator Test Accuracy: %.2f%%\n" % (scores[3]*100))
+        
+        print("\nValidating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
+        
+        return (scores[0], scores[3]*100)
         
     def save_imgs(self, epoch):
         r, c = 5, 5
@@ -280,39 +266,111 @@ class DCGAN():
         save(self.discriminator, "mnist_gan_discriminator")
         save(self.combined, "mnist_gan_adversarial")
         
-    def plot_model_history(self, model_history):    
+    def plot_training_history(self):    
         fig, axs = plt.subplots(1,2,figsize=(15,5))
+        plt.title('Training History')
         # summarize history for G and D accuracy
-        axs[0].plot(range(1,len(model_history['D_acc'])+1),model_history['D_acc'])
-        axs[0].plot(range(1,len(model_history['G_acc'])+1),model_history['G_acc'])
+        axs[0].plot(range(1,len(self.training_history['D_acc'])+1),self.training_history['D_acc'])
+        axs[0].plot(range(1,len(self.training_history['G_acc'])+1),self.training_history['G_acc'])
         axs[0].set_title('D and G Accuracy')
         axs[0].set_ylabel('Accuracy')
         axs[0].set_xlabel('Epoch')
-        axs[0].set_xticks(np.arange(1,len(model_history['D_acc'])+1),len(model_history['D_acc'])/10)
+        axs[0].set_xticks(np.arange(1,len(self.training_history['D_acc'])+1),len(self.training_history['D_acc'])/10)
         axs[0].legend(['Discriminator', 'Generator'], loc='best')
+        
         # summarize history for G and D loss
-        axs[1].plot(range(1,len(model_history['D_loss'])+1),model_history['D_loss'])
-        axs[1].plot(range(1,len(model_history['G_loss'])+1),model_history['G_loss'])
+        axs[1].plot(range(1,len(self.training_history['D_loss'])+1),self.training_history['D_loss'])
+        axs[1].plot(range(1,len(self.training_history['G_loss'])+1),self.training_history['G_loss'])
         axs[1].set_title('D and G Loss')
         axs[1].set_ylabel('Loss')
         axs[1].set_xlabel('Epoch')
-        axs[1].set_xticks(np.arange(1,len(model_history['G_loss'])+1),len(model_history['G_loss'])/10)
+        axs[1].set_xticks(np.arange(1,len(self.training_history['G_loss'])+1),len(self.training_history['G_loss'])/10)
         axs[1].legend(['Discriminator', 'Generator'], loc='best')
         plt.show()
         
-def load_dataset():
-    return mnist.load_data()
+    def predict(self, X_test, y_test):
+        # Generating a predictions from the discriminator over the testing dataset
+        y_pred = dcgan.discriminator.predict(X_test)
+        
+        # Formating predictions to remove the one_hot_encoding format
+        y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
+        
+        print ('Overall accuracy: ' + '{:2f}'.format(accuracy_score(y_test, y_pred)))
+        
+        # Calculating and ploting a Classification Report
+        target_names = ['class 0', 'class 1', 'class 2', 'class 3', 'class 4', 'class 5', 'class 6', 'class 7', 'class 8', 'class 9']
+        print("Classification report:\n %s\n" 
+              % (classification_report(y_test, y_pred, target_names=target_names)))
+        
+        # Calculating and ploting Confusion Matrix
+        cm = confusion_matrix(y_test, y_pred)
+        print("Confusion matrix:\n%s" % cm)
+
+        plt.matshow(cm)
+        plt.title('Confusion matrix\n')
+        plt.colorbar()
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+        plt.xticks(np.arange(min(y_test), max(y_test)+1, 1.0))
+        plt.yticks(np.arange(min(y_test), max(y_test)+1, 1.0))
+        plt.show() 
+        
+def load_data_kfold(k):
+    # Load the dataset
+    (X_train, y_train) , (X_test, y_test) = mnist.load_data()
+    
+    # Normalize values from -1 to 1
+    X_train = (X_train.astype(np.float32) - 127.5) / 127.5
+    X_train = np.expand_dims(X_train, axis=3)
+    y_train = y_train.reshape(-1, 1)
+    
+    X_test = (X_test.astype(np.float32) - 127.5) / 127.5
+    X_test = np.expand_dims(X_test, axis=3)
+    y_test = y_test.reshape(-1, 1)
+    
+    # define 10-fold cross validation
+    folds = list(StratifiedKFold(n_splits=k, shuffle=True, random_state=seed).split(X_train, y_train))
+    
+    return folds, X_train, y_train, X_test, y_test
     
 if __name__ == '__main__':
-    dcgan = DCGAN()
+    folds, X_train, y_train, X_test, y_test = load_data_kfold(10)
+    kfold_scores = []
     
-    # Load the dataset
-    (X_train, y_train), (X_test, y_test) = load_dataset()
+    # Instanciate a compiled model
     
-    dcgan.train(X_train, y_train, epochs=10, batch_size=32, save_interval=100)
     
-    dcgan.evaluate(X_test, y_test, batch_size=32)
+    start = time.time()
+    # Train the model on each fold
+    for fold_number, (train_idx, val_idx) in enumerate(folds):
+        print('\n-----  Fold: %d  -----' % (fold_number))
+                
+        # Spliting training dataset into train and validation sets
+        X_train_cv = X_train[train_idx]
+        y_train_cv = y_train[train_idx]
+        X_valid_cv = X_train[val_idx]
+        y_valid_cv = y_train[val_idx]
+        
+        dcgan = DCGAN()
+        # Fit/Train the model
+        dcgan.train(X_train_cv, y_train_cv, epochs=100, batch_size=32, save_interval=10)
+        
+        # Evaluate the model
+        _ , acc = dcgan.evaluate_discriminator(X_valid_cv, y_valid_cv)
+        
+        kfold_scores.append(acc)
+        
+    end = time.time()
+    print ("\Training time: %0.1fs\n" % (end - start))
     
+    #print mean of k-fold
+    print("Training avg acc: %.2f%% (+/- %.2f%%)\n" % (np.mean(kfold_scores), np.std(kfold_scores)))
+    
+    # plot training graph        
+    dcgan.plot_training_history()
+    
+    #evaluate the trained D model w.r.t unseen data (i.e. testing set)
+    dcgan.predict(X_test, y_test)
+    
+    #saved the trained model
     dcgan.save_model()
-
-    
