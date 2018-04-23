@@ -9,10 +9,9 @@ from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
-import os
-import shutil
 import matplotlib.pyplot as plt
 import numpy as np
 import time
@@ -144,6 +143,7 @@ class DCGAN():
         model.add(Dropout(0.25))
         
         model.add(Flatten())
+        
         #model.summary()
         
         # instantiate a Keras tensor
@@ -159,12 +159,8 @@ class DCGAN():
         # Once instantiated, this model will include all layers required in the computation of y given x.
         return Model(img, [valid, label])
 
-    def train(self, X_train, y_train, epochs, batch_size, save_interval):
+    def train(self, X_train, y_train, epochs=200, batch_size=32, save_interval=60):
         
-        # delete directory if exist and create it
-        shutil.rmtree('generators_output', ignore_errors=True)
-        os.makedirs("generators_output")
-            
         half_batch = int(batch_size / 2)
         
         # Class weights:
@@ -233,7 +229,7 @@ class DCGAN():
         #  Evaluating the trained Discriminator
         scores = self.discriminator.evaluate(X_test, [valid, labels])
         
-        print("\nEvaluating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
+        print("\nValidating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
         
         return (scores[0], scores[3]*100)
         
@@ -266,9 +262,6 @@ class DCGAN():
             open(options['file_arch'], 'w').write(json_string)
             model.save_weights(options['file_weight'])
 
-        shutil.rmtree('saved_models', ignore_errors=True)
-        os.makedirs("saved_models")
-        
         save(self.generator, "mnist_gan_generator")
         save(self.discriminator, "mnist_gan_discriminator")
         save(self.combined, "mnist_gan_adversarial")
@@ -283,7 +276,6 @@ class DCGAN():
         axs[0].set_ylabel('Accuracy')
         axs[0].set_xlabel('Epoch')
         axs[0].set_xticks(np.arange(1,len(self.training_history['D_acc'])+1),len(self.training_history['D_acc'])/10)
-        axs[0].set_yticks([n for n in range(0, 101,10)])
         axs[0].legend(['Discriminator', 'Generator'], loc='best')
         
         # summarize history for G and D loss
@@ -298,12 +290,12 @@ class DCGAN():
         
     def predict(self, X_test, y_test):
         # Generating a predictions from the discriminator over the testing dataset
-        y_pred = self.discriminator.predict(X_test)
+        y_pred = dcgan.discriminator.predict(X_test)
         
         # Formating predictions to remove the one_hot_encoding format
         y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
         
-        print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred) * 100))
+        print ('Overall accuracy: ' + '{:2f}'.format(accuracy_score(y_test, y_pred)))
         
         # Calculating and ploting a Classification Report
         target_names = ['class 0', 'class 1', 'class 2', 'class 3', 'class 4', 'class 5', 'class 6', 'class 7', 'class 8', 'class 9']
@@ -312,10 +304,9 @@ class DCGAN():
         
         # Calculating and ploting Confusion Matrix
         cm = confusion_matrix(y_test, y_pred)
-#        print("Confusion matrix:\n%s" % cm)
+        print("Confusion matrix:\n%s" % cm)
 
-        plt.figure(figsize=(10,5))
-        plt.matshow(cm, fignum=1)
+        plt.matshow(cm)
         plt.title('Confusion matrix\n')
         plt.colorbar()
         plt.ylabel('True label')
@@ -324,7 +315,7 @@ class DCGAN():
         plt.yticks(np.arange(min(y_test), max(y_test)+1, 1.0))
         plt.show() 
         
-def load_data():
+def load_data_kfold(k):
     # Load the dataset
     (X_train, y_train) , (X_test, y_test) = mnist.load_data()
     
@@ -337,32 +328,48 @@ def load_data():
     X_test = np.expand_dims(X_test, axis=3)
     y_test = y_test.reshape(-1, 1)
     
-    return X_train, y_train, X_test, y_test
+    # define 10-fold cross validation
+    folds = list(StratifiedKFold(n_splits=k, shuffle=True, random_state=seed).split(X_train, y_train))
+    
+    return folds, X_train, y_train, X_test, y_test
     
 if __name__ == '__main__':
-    X_train, y_train, X_test, y_test = load_data()
+    folds, X_train, y_train, X_test, y_test = load_data_kfold(10)
+    kfold_scores = []
     
     # Instanciate a compiled model
-    dcgan = DCGAN()
-    
+
     start = time.time()
-    
-    # Fit/Train the model    
-    dcgan.train(X_train, y_train, epochs=1300, batch_size=32, save_interval=200)
-            
+    # Train the model on each fold
+    for fold_number, (train_idx, val_idx) in enumerate(folds):
+        print('\n-----  Fold: %d  -----' % (fold_number))
+                
+        # Spliting training dataset into train and validation sets
+        X_train_cv = X_train[train_idx]
+        y_train_cv = y_train[train_idx]
+        X_valid_cv = X_train[val_idx]
+        y_valid_cv = y_train[val_idx]
+        
+        dcgan = DCGAN()
+        # Fit/Train the model
+        dcgan.train(X_train_cv, y_train_cv, epochs=100, batch_size=32, save_interval=10)
+        
+        # Evaluate the model
+        _ , acc = dcgan.evaluate_discriminator(X_valid_cv, y_valid_cv)
+        
+        kfold_scores.append(acc)
+        
     end = time.time()
-    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
+    print ("\Training time: %0.1fs\n" % (end - start))
+    
+    #print mean of k-fold
+    print("Training avg acc: %.2f%% (+/- %.2f%%)\n" % (np.mean(kfold_scores), np.std(kfold_scores)))
     
     # plot training graph        
     dcgan.plot_training_history()
     
     #evaluate the trained D model w.r.t unseen data (i.e. testing set)
-    
-    dcgan.evaluate_discriminator(X_test, y_test)
-    
     dcgan.predict(X_test, y_test)
-    
-    
     
     #saved the trained model
     dcgan.save_model()
