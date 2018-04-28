@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 
-from keras.datasets import mnist
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
@@ -10,11 +9,14 @@ from keras.optimizers import Adam
 from keras.utils import to_categorical
 
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from skimage.transform import resize
 import scipy.io
 
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import shutil
+import os
 
 # Fixing random state for reproducibility
 seed = 19680801
@@ -22,11 +24,11 @@ np.random.seed(seed)
 
 class DCGAN():
     def __init__(self):
-        # MNIST input shape is 28x28x1
-        self.img_rows = 28
-        self.img_cols = 28
-        self.channels = 1
-        self.num_classes = 10
+        # MNIST input shape is 34x34x3
+        self.img_rows = 34
+        self.img_cols = 34
+        self.channels = 3
+        self.num_classes = 2
         self.training_history = {
                 'D_loss': [], 
                 'D_acc': [],
@@ -76,20 +78,24 @@ class DCGAN():
         
         model = Sequential()
         
-        model.add(Dense(128 * 7 * 7, activation="relu", input_dim=100))
-        model.add(Reshape((7, 7, 128)))
+        model.add(Dense(128 * 8 * 8, activation="relu", input_dim=100))
+        model.add(Reshape((8, 8, 128)))
         model.add(BatchNormalization(momentum=0.8))
+        
         # fractionally-strided convolution, do not confuse with deconvolution operation
         model.add(UpSampling2D())
         model.add(Conv2D(128, kernel_size=3, padding="same"))
-        # using a bounded activation allowed the model to learn more quickly to saturate and cover the color space of the training distribution
+        # using a bounded activation allowed the model to learn more quickly to saturate 
+        # and cover the color space of the training distribution
         model.add(Activation("relu"))
         model.add(BatchNormalization(momentum=0.8))
+        
         #upsampling is the opposite to pooling. Repeats the rows and columns of the data
         model.add(UpSampling2D())
         model.add(Conv2D(64, kernel_size=3, padding="same"))
         model.add(Activation("relu"))
         model.add(BatchNormalization(momentum=0.8))
+        
         #flatten to the amount of channels
         model.add(Conv2D(self.channels, kernel_size=3, padding="same"))
         model.add(Activation("tanh"))
@@ -143,7 +149,6 @@ class DCGAN():
         model.add(Dropout(0.25))
         
         model.add(Flatten())
-        
         #model.summary()
         
         # instantiate a Keras tensor
@@ -161,6 +166,10 @@ class DCGAN():
 
     def train(self, X_train, y_train, epochs, batch_size, save_interval):
         
+        # delete directory if exist and create it
+        shutil.rmtree('generators_output', ignore_errors=True)
+        os.makedirs("generators_output")
+            
         half_batch = int(batch_size / 2)
         
         # Class weights:
@@ -229,7 +238,7 @@ class DCGAN():
         #  Evaluating the trained Discriminator
         scores = self.discriminator.evaluate(X_test, [valid, labels])
         
-        print("\nValidating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
+        print("\nEvaluating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
         
         return (scores[0], scores[3]*100)
         
@@ -262,6 +271,9 @@ class DCGAN():
             open(options['file_arch'], 'w').write(json_string)
             model.save_weights(options['file_weight'])
 
+        shutil.rmtree('saved_models', ignore_errors=True)
+        os.makedirs("saved_models")
+        
         save(self.generator, "mnist_gan_generator")
         save(self.discriminator, "mnist_gan_discriminator")
         save(self.combined, "mnist_gan_adversarial")
@@ -291,12 +303,12 @@ class DCGAN():
         
     def predict(self, X_test, y_test):
         # Generating a predictions from the discriminator over the testing dataset
-        y_pred = dcgan.discriminator.predict(X_test)
+        y_pred = self.discriminator.predict(X_test)
         
         # Formating predictions to remove the one_hot_encoding format
         y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
         
-        print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred)*100 ))
+        print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred) * 100))
         
         # Calculating and ploting a Classification Report
         target_names = ['class 0', 'class 1', 'class 2', 'class 3', 'class 4', 'class 5', 'class 6', 'class 7', 'class 8', 'class 9']
@@ -319,49 +331,48 @@ class DCGAN():
         
 def load_data():
     # Load the dataset
-    (X_train, y_train) , (X_test, y_test) = mnist.load_data()
-    
-    # Normalize values from -1 to 1
-    X_train = (X_train.astype(np.float32) - 127.5) / 127.5
-    X_train = np.expand_dims(X_train, axis=3)
-    y_train = y_train.reshape(-1, 1)
-    
-    X_test = (X_test.astype(np.float32) - 127.5) / 127.5
-    X_test = np.expand_dims(X_test, axis=3)
-    y_test = y_test.reshape(-1, 1)
-    
-    
-    return X_train, y_train, X_test, y_test
-    
-if __name__ == '__main__':
-    
     dataset = scipy.io.loadmat('TMI2015/training/training.mat')
-    
+        
     X_train = np.transpose(dataset['train_x'], (3, 0, 1, 2))
     y_train = list(dataset['train_y'][0])
     
     X_test = np.transpose(dataset['test_x'], (3, 0, 1, 2))
     y_test = list(dataset['test_y'][0])
-       
     
-#    X_train, y_train, X_test, y_test = load_data()
+    # Normalize values from -1 to 1
+    y_train = np.asarray(y_train).reshape(-1, 1)
+    y_test = np.asarray(y_test).reshape(-1, 1)
     
-#    # Instanciate a compiled model
-#    dcgan = DCGAN()
-#    
-#    start = time.time()
-#    
-#    # Fit/Train the model    
-#    dcgan.train(X_train, y_train, epochs=20000, batch_size=32, save_interval=50)
-#            
-#    end = time.time()
-#    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
-#    
-#    # plot training graph        
-#    dcgan.plot_training_history()
-#    
-#    #evaluate the trained D model w.r.t unseen data (i.e. testing set)
-#    dcgan.predict(X_test, y_test)
-#    
-#    #saved the trained model
-#    dcgan.save_model()
+    img_i = 0
+    while img_i < len(X_train):
+        resize(X_train[img_i,:,:,:], (100, 100), mode='reflect').shape
+        img_i += 1
+    
+    return X_train, y_train, X_test, y_test
+    
+if __name__ == '__main__':
+
+    X_train, y_train, X_test, y_test = load_data()
+    
+    # Instanciate a compiled model
+    dcgan = DCGAN()
+    
+    start = time.time()
+    
+    # Fit/Train the model    
+    dcgan.train(X_train, y_train, epochs=1300, batch_size=32, save_interval=200)
+            
+    end = time.time()
+    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
+    
+    # plot training graph        
+    dcgan.plot_training_history()
+    
+    #evaluate the trained D model w.r.t unseen data (i.e. testing set)
+    
+    dcgan.evaluate_discriminator(X_test, y_test)
+    
+    dcgan.predict(X_test, y_test)
+      
+    #saved the trained model
+    dcgan.save_model()

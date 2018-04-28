@@ -348,7 +348,7 @@ if __name__ == '__main__':
     start = time.time()
     
     # Fit/Train the model    
-    dcgan.train(X_train, y_train, epochs=1300, batch_size=32, save_interval=200)
+    dcgan.train(X_train, y_train, epochs=1250, batch_size=32, save_interval=200)
             
     end = time.time()
     print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
@@ -361,8 +361,6 @@ if __name__ == '__main__':
     dcgan.evaluate_discriminator(X_test, y_test)
     
     dcgan.predict(X_test, y_test)
-    
-    
-    
+      
     #saved the trained model
     dcgan.save_model()

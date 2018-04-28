@@ -11,3 +11,4 @@ https://stackoverflow.com/questions/42011070/on-windows-running-import-tensorflo
 - Tensorflow 1.6
 - Keras 2.1.5
 - Sklearn
+- Sckit-image
