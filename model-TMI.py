@@ -24,7 +24,7 @@ np.random.seed(seed)
 
 class DCGAN():
     def __init__(self):
-        # MNIST input shape is 34x34x3
+        # TMI input shape is 34x34x3
         self.img_rows = 34
         self.img_cols = 34
         self.channels = 3
@@ -78,8 +78,8 @@ class DCGAN():
         
         model = Sequential()
         
-        model.add(Dense(128 * 8 * 8, activation="relu", input_dim=100))
-        model.add(Reshape((8, 8, 128)))
+        model.add(Dense(128 * 9 * 9, activation="relu", input_dim=100))
+        model.add(Reshape((9, 9, 128)))
         model.add(BatchNormalization(momentum=0.8))
         
         # fractionally-strided convolution, do not confuse with deconvolution operation
@@ -360,7 +360,7 @@ if __name__ == '__main__':
     start = time.time()
     
     # Fit/Train the model    
-    dcgan.train(X_train, y_train, epochs=1300, batch_size=32, save_interval=200)
+    dcgan.train(X_train, y_train, epochs=1250, batch_size=32, save_interval=50)
             
     end = time.time()
     print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))

@@ -162,8 +162,8 @@ class DCGAN():
     def train(self, X_train, y_train, epochs, batch_size, save_interval):
         
         # delete directory if exist and create it
-        shutil.rmtree('generators_output', ignore_errors=True)
-        os.makedirs("generators_output")
+        shutil.rmtree('MNIST_generators_output', ignore_errors=True)
+        os.makedirs("MNIST_generators_output")
             
         half_batch = int(batch_size / 2)
         
@@ -252,22 +252,22 @@ class DCGAN():
                 axs[i,j].imshow(gen_imgs[cnt, :,:,0], cmap='gray')
                 axs[i,j].axis('off')
                 cnt += 1
-        fig.savefig("./generators_output/mnist_%d.png" % epoch)
+        fig.savefig("./MNIST_generators_output/mnist_%d.png" % epoch)
         plt.close()
         
     def save_model(self):
 
         def save(model, model_name):
-            model_path = "./saved_models/%s.json" % model_name
-            weights_path = "./saved_models/%s_weights.hdf5" % model_name
+            model_path = "./MNIST_saved_models/%s.json" % model_name
+            weights_path = "./MNIST_saved_models/%s_weights.hdf5" % model_name
             options = {"file_arch": model_path, 
                         "file_weight": weights_path}
             json_string = model.to_json()
             open(options['file_arch'], 'w').write(json_string)
             model.save_weights(options['file_weight'])
 
-        shutil.rmtree('saved_models', ignore_errors=True)
-        os.makedirs("saved_models")
+        shutil.rmtree('MNIST_saved_models', ignore_errors=True)
+        os.makedirs("MNIST_saved_models")
         
         save(self.generator, "mnist_gan_generator")
         save(self.discriminator, "mnist_gan_discriminator")
@@ -348,7 +348,7 @@ if __name__ == '__main__':
     start = time.time()
     
     # Fit/Train the model    
-    dcgan.train(X_train, y_train, epochs=1250, batch_size=32, save_interval=200)
+    dcgan.train(X_train, y_train, epochs=1250, batch_size=32, save_interval=50)
             
     end = time.time()
     print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
