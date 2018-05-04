@@ -24,7 +24,7 @@ import os
 seed = 19680801
 np.random.seed(seed)
 
-class DCGAN():
+class SGAN():
     def __init__(self):
         # TMI input shape (after resized)is 32x32x3
         self.img_rows = 32
@@ -250,7 +250,7 @@ class DCGAN():
 
         # Rescale images
         gen_imgs = 0.5 * gen_imgs + 0.5
-        
+
         fig, axs = plt.subplots(r, c)
         cnt = 0
         for i in range(r):
@@ -303,13 +303,13 @@ class DCGAN():
         plt.show()
 
     def predict(self, X_test, y_test):
-        
+
         # Generating a predictions from the discriminator over the testing dataset
         y_pred = self.discriminator.predict(X_test)
 
         # Formating predictions to remove the one_hot_encoding format
         y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
-        
+
         print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred) * 100))
 
         # Calculating and ploting a Classification Report
@@ -320,16 +320,16 @@ class DCGAN():
         # Calculating and ploting Confusion Matrix
         cm = confusion_matrix(y_test, y_pred)
         print("Confusion matrix:\n%s" % cm)
-        
-        
-        
+
+
+
         plt.figure()
         plot_confusion_matrix(cm, class_names, title='Confusion matrix, without normalization')
-        
+
         plt.figure()
         plot_confusion_matrix(cm, class_names, normalize=True, title='Normalized confusion matrix')
-        
-        
+
+
     def load_wights(self):
         # load weights into new model
         self.generator.load_weights("./TMI_saved_models/TMI_gan_generator_weights.hdf5")
@@ -370,7 +370,7 @@ def plot_confusion_matrix(cm, classes,
     plt.tight_layout()
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
- 
+
 def load_TMI_data():
     # Load the dataset
     dataset = scipy.io.loadmat('TMI2015/training/training.mat')
@@ -386,22 +386,22 @@ def load_TMI_data():
     y_train = np.asarray(y_train).reshape(-1, 1)
     y_test = np.asarray(y_test).reshape(-1, 1)
 
-    y_test -= 1       
-    y_train -= 1  
-    
+    y_test -= 1
+    y_train -= 1
+
     # Resize to 32x32
     X_train_resized = np.empty([X_train.shape[0], 32, 32, X_train.shape[3]])
     for i in range(X_train.shape[0]):
         X_train_resized[i] = resize(X_train[i], (32, 32, 3), mode='reflect')
-        
+
     X_test_resized = np.empty([X_test.shape[0], 32, 32, X_test.shape[3]])
     for i in range(X_test.shape[0]):
         X_test_resized[i] = resize(X_test[i], (32, 32, 3), mode='reflect')
-        
+
     #Plotting a sample data:
 #    r, c = 5, 5
 #    fig, axs = plt.subplots(r, c)
-#    
+#
 #    cnt = 0
 #    for i in range(r):
 #        for j in range(c):
@@ -411,7 +411,7 @@ def load_TMI_data():
 #    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
 #    plt.suptitle('Non-nuclei Training Sample - label = 1')
 #    plt.show()
-#    
+#
 #    r, c = 5, 5
 #    fig, axs = plt.subplots(r, c)
 #    cnt = 0
@@ -423,7 +423,7 @@ def load_TMI_data():
 #    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
 #    plt.suptitle('Nuclei Training Sample - label = 2')
 #    plt.show()
-    
+
     return X_train_resized, y_train, X_test_resized, y_test
 
 if __name__ == '__main__':
@@ -431,29 +431,28 @@ if __name__ == '__main__':
     X_train, y_train, X_test, y_test = load_TMI_data()
 
     # Instanciate a compiled model
-    dcgan = DCGAN()
+#    sgan = SGAN()
 
 
-    dcgan.load_wights()
-    
+#    sgan.load_wights()
+
 #    start = time.time()
 #
 #    # Fit/Train the model
-#    dcgan.train(X_train, y_train, epochs=10, batch_size=32, save_interval=50)
+#    sgan.train(X_train, y_train, epochs=10, batch_size=32, save_interval=50)
 #
 #    end = time.time()
 #    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
-#    
+#
 #    #saved the trained model
-#    dcgan.save_model()
+#    sgan.save_model()
 
     # plot training graph
-#    dcgan.plot_training_history()
+#    sgan.plot_training_history()
 
     #evaluate the trained D model w.r.t unseen data (i.e. testing set)
 
-    dcgan.evaluate_discriminator(X_test, y_test)
+#    sgan.evaluate_discriminator(X_test, y_test)
+#
+#    sgan.predict(X_test, y_test)
 
-    dcgan.predict(X_test, y_test)
-
-    

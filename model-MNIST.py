@@ -8,6 +8,7 @@ from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
+from keras.utils.vis_utils import plot_model
 
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
@@ -21,7 +22,7 @@ import time
 seed = 19680801
 np.random.seed(seed)
 
-class DCGAN():
+class SGAN():
     def __init__(self):
         # MNIST input shape is 28x28x1
         self.img_rows = 28
@@ -29,16 +30,16 @@ class DCGAN():
         self.channels = 1
         self.num_classes = 10
         self.training_history = {
-                'D_loss': [], 
+                'D_loss': [],
                 'D_acc': [],
-                'G_loss': [], 
+                'G_loss': [],
                 'G_acc': [],
                 }
-        
+
         # While previous GAN work has used momentum to accelerate training, we used the Adam optimizer
         # (Kingma & Ba, 2014) with tuned hyperparameters. We found the suggested learning rate of 0.001,
         # to be too high, using 0.0002 instead. Additionally, we found leaving the momentum term β1 at the
-        # suggested value of 0.9 resulted in training oscillation and instability while reducing it to 0.5 helped 
+        # suggested value of 0.9 resulted in training oscillation and instability while reducing it to 0.5 helped
         # stabilize training
         optimizer = Adam(0.0002, 0.5)
 
@@ -47,7 +48,7 @@ class DCGAN():
         # Compile discriminator's model, i.e. define its learning process
         # binary crossentropy is used to distinguish among real or fake samples
         # categorical entropy is to distinguish among which real category is (nuclei or non-nuclei)
-        self.discriminator.compile(loss=['binary_crossentropy', 'categorical_crossentropy'], 
+        self.discriminator.compile(loss=['binary_crossentropy', 'categorical_crossentropy'],
             loss_weights=[0.5, 0.5],
             optimizer=optimizer,
             metrics=['accuracy'])
@@ -67,16 +68,20 @@ class DCGAN():
         valid, _ = self.discriminator(img)
 
         # The combined model  (stacked generator and discriminator) takes
-        # noise as input => generates images => determines validity 
+        # noise as input => generates images => determines validity
         self.combined = Model(z, valid)
+
+        plot_path = "combined.png"
+        plot_model(self.combined, to_file=plot_path, show_shapes=True, show_layer_names=True)
+
         self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
 
     def build_generator(self):
         # This model replaced any pooling layers with strided convolutions
         # Allowing it to learn its own spatial upsampling
-        
+
         model = Sequential()
-        
+
         model.add(Dense(128 * 7 * 7, activation="relu", input_dim=100))
         model.add(Reshape((7, 7, 128)))
         model.add(BatchNormalization(momentum=0.8))
@@ -95,7 +100,10 @@ class DCGAN():
         model.add(Conv2D(self.channels, kernel_size=3, padding="same"))
         model.add(Activation("tanh"))
 
-        #model.summary()
+        plot_path = "generator.png"
+        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
+
+#        model.summary()
 
         noise = Input(shape=(100,))
         img = model(noise)
@@ -106,12 +114,12 @@ class DCGAN():
         # This model replaced any pooling layers with strided convolutions
         # Allowing it to learn its own spatial downsampling
         img_shape = (self.img_rows, self.img_cols, self.channels)
-        
+
         # A Sequential model is a linear stack of layers.
         model = Sequential()
-        
+
         # Create a Sequential model by simply adding layers via the .add() method
-        # 32 filters, 3x3 kernel size, stride 2, input_shape is 28x28x1, same: pad so the output and input size are equal 
+        # 32 filters, 3x3 kernel size, stride 2, input_shape is 28x28x1, same: pad so the output and input size are equal
         model.add(Conv2D(32, kernel_size=3, strides=2, input_shape=img_shape, padding="same"))
         # f(x) = alpha * x for x < 0, f(x) = x for x >= 0.
         # Leaky rectified activation worked well, especially for higher resolution modeling.
@@ -128,11 +136,11 @@ class DCGAN():
         # Normalize the activations of the previous layer at each batch to reduce its covariance shift,
         # i.e., the amount that the distribution of each layer shift around.
 
-        # This helps deal with training problems that arise due to poor initialization and helps gradient flow in deeper models. 
+        # This helps deal with training problems that arise due to poor initialization and helps gradient flow in deeper models.
         # This proved critical to get deep generators to begin learning, preventing the generator from collapsing all samples
-        # to a single point which is a common failure mode observed in GANs. 
-        # 
-        # Directly applying batchnorm to all layers, however, resulted in sample oscillation and model instability. 
+        # to a single point which is a common failure mode observed in GANs.
+        #
+        # Directly applying batchnorm to all layers, however, resulted in sample oscillation and model instability.
         # This was avoided by not applying batchnorm to the generator output layer and the discriminator input layer
         model.add(BatchNormalization(momentum=0.8))
         model.add(Conv2D(128, kernel_size=3, strides=2, padding="same"))
@@ -142,101 +150,103 @@ class DCGAN():
         model.add(Conv2D(256, kernel_size=3, strides=1, padding="same"))
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dropout(0.25))
-        
+
         model.add(Flatten())
-        #model.summary()
-        
+#        model.summary()
+        plot_path = "discriminator.png"
+        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
+
         # instantiate a Keras tensor
         img = Input(shape=img_shape)
         features = model(img)
-        
+
         # valid indicates if the image is real or fake
         valid = Dense(1, activation="sigmoid")(features)
         # iff the image is real, label indicates which type of image it is
         label = Dense(self.num_classes+1, activation="softmax")(features)
-        
+
         # Given an img (x)  and a label(y), instantiate a Model.
         # Once instantiated, this model will include all layers required in the computation of y given x.
         return Model(img, [valid, label])
 
     def train(self, X_train, y_train, epochs, batch_size, save_interval):
-        
+
         # delete directory if exist and create it
         shutil.rmtree('MNIST_generators_output', ignore_errors=True)
         os.makedirs("MNIST_generators_output")
-            
+
         half_batch = int(batch_size / 2)
-        
+
         # Class weights:
-        # To balance the difference in occurences of digit class labels. 
+        # To balance the difference in occurences of digit class labels.
         # 50% of labels that the discriminator trains on are 'fake'.
         # Weight = 1 / frequency
         cw1 = {0: 1, 1: 1}
         cw2 = {i: self.num_classes / half_batch for i in range(self.num_classes)}
         cw2[self.num_classes] = 1 / half_batch
-               
+
         for epoch in range(epochs):
             # ---------------------
             #  Train Discriminator
             # ---------------------
-    
+
             # Select a random half batch of images
             idx = np.random.randint(0, X_train.shape[0], half_batch)
             imgs = X_train[idx]
-    
+
             # Draw random samples from a Gaussian distribution.
             noise = np.random.normal(0, 1, (half_batch, 100))
             # Generate a half batch of new images
             gen_imgs = self.generator.predict(noise)
-            
+
             valid = np.ones((half_batch, 1))
             fake = np.zeros((half_batch, 1))
-            
+
             # Convert labels to categorical one-hot encoding
             labels = to_categorical(y_train[idx], num_classes=self.num_classes+1)
             fake_labels = to_categorical(np.full((half_batch, 1), self.num_classes), num_classes=self.num_classes+1)
-    
+
             # Train the discriminator (real classified as ones and fakes as zeros)
             # train_on_batch: Single gradient update over one batch of samples
             d_loss_real = self.discriminator.train_on_batch(imgs, [valid, labels], class_weight=[cw1, cw2])
             d_loss_fake = self.discriminator.train_on_batch(gen_imgs, [fake, fake_labels], class_weight=[cw1, cw2])
             d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-    
+
             # ---------------------
             #  Train Generator
             # ---------------------
-    
+
             noise = np.random.normal(0, 1, (batch_size, 100))
             validity = np.ones((batch_size, 1))
-            
+
             # Train the generator (wants discriminator to mistake images as real)
             g_loss = self.combined.train_on_batch(noise, validity, class_weight=[cw1, cw2])
-    
+
             self.training_history["D_loss"].append(d_loss[0]);
             self.training_history["D_acc"].append(100*d_loss[3]);
             self.training_history["G_loss"].append(g_loss);
             self.training_history["G_acc"].append(100*d_loss[4]);
-    
+
             # If at save interval => save generated image samples
             if epoch % save_interval == 0:
                 # Plot the progress
                 print ("%d: Training D [loss: %.4f, acc: %.2f%% ] - G [loss: %.4f, acc: %.2f%%]" % (epoch, d_loss[0], 100*d_loss[3], g_loss, 100*d_loss[4]))
-                self.save_imgs(epoch)        
-           
+                self.save_imgs(epoch)
+
     def evaluate_discriminator(self, X_test, y_test):
 
         valid = np.ones((y_test.shape[0], 1))
-        
+
         # Convert labels to categorical one-hot encoding
         labels = to_categorical(y_test, num_classes=self.num_classes+1)
 
         #  Evaluating the trained Discriminator
         scores = self.discriminator.evaluate(X_test, [valid, labels])
-        
+
         print("\nEvaluating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
-        
+
         return (scores[0], scores[3]*100)
-        
+
     def save_imgs(self, epoch):
         r, c = 5, 5
         noise = np.random.normal(0, 1, (r * c, 100))
@@ -254,13 +264,14 @@ class DCGAN():
                 cnt += 1
         fig.savefig("./MNIST_generators_output/mnist_%d.png" % epoch)
         plt.close()
-        
+
     def save_model(self):
 
         def save(model, model_name):
+
             model_path = "./MNIST_saved_models/%s.json" % model_name
             weights_path = "./MNIST_saved_models/%s_weights.hdf5" % model_name
-            options = {"file_arch": model_path, 
+            options = {"file_arch": model_path,
                         "file_weight": weights_path}
             json_string = model.to_json()
             open(options['file_arch'], 'w').write(json_string)
@@ -268,12 +279,12 @@ class DCGAN():
 
         shutil.rmtree('MNIST_saved_models', ignore_errors=True)
         os.makedirs("MNIST_saved_models")
-        
+
         save(self.generator, "mnist_gan_generator")
         save(self.discriminator, "mnist_gan_discriminator")
         save(self.combined, "mnist_gan_adversarial")
-        
-    def plot_training_history(self):    
+
+    def plot_training_history(self):
         fig, axs = plt.subplots(1,2,figsize=(15,5))
         plt.title('Training History')
         # summarize history for G and D accuracy
@@ -285,7 +296,7 @@ class DCGAN():
         axs[0].set_xticks(np.arange(1,len(self.training_history['D_acc'])+1),len(self.training_history['D_acc'])/10)
         axs[0].set_yticks([n for n in range(0, 101,10)])
         axs[0].legend(['Discriminator', 'Generator'], loc='best')
-        
+
         # summarize history for G and D loss
         axs[1].plot(range(1,len(self.training_history['D_loss'])+1),self.training_history['D_loss'])
         axs[1].plot(range(1,len(self.training_history['G_loss'])+1),self.training_history['G_loss'])
@@ -295,21 +306,21 @@ class DCGAN():
         axs[1].set_xticks(np.arange(1,len(self.training_history['G_loss'])+1),len(self.training_history['G_loss'])/10)
         axs[1].legend(['Discriminator', 'Generator'], loc='best')
         plt.show()
-        
+
     def predict(self, X_test, y_test):
         # Generating a predictions from the discriminator over the testing dataset
         y_pred = self.discriminator.predict(X_test)
-        
+
         # Formating predictions to remove the one_hot_encoding format
         y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
-        
+
         print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred) * 100))
-        
+
         # Calculating and ploting a Classification Report
         target_names = ['class 0', 'class 1', 'class 2', 'class 3', 'class 4', 'class 5', 'class 6', 'class 7', 'class 8', 'class 9']
-        print("Classification report:\n %s\n" 
+        print("Classification report:\n %s\n"
               % (classification_report(y_test, y_pred, target_names=target_names)))
-        
+
         # Calculating and ploting Confusion Matrix
         cm = confusion_matrix(y_test, y_pred)
 #        print("Confusion matrix:\n%s" % cm)
@@ -322,45 +333,45 @@ class DCGAN():
         plt.xlabel('Predicted label')
         plt.xticks(np.arange(min(y_test), max(y_test)+1, 1.0))
         plt.yticks(np.arange(min(y_test), max(y_test)+1, 1.0))
-        plt.show() 
-        
+        plt.show()
+
 def load_data():
     # Load the dataset
     (X_train, y_train) , (X_test, y_test) = mnist.load_data()
-    
+
     # Normalize values from -1 to 1
     X_train = (X_train.astype(np.float32) - 127.5) / 127.5
     X_train = np.expand_dims(X_train, axis=3)
     y_train = y_train.reshape(-1, 1)
-    
+
     X_test = (X_test.astype(np.float32) - 127.5) / 127.5
     X_test = np.expand_dims(X_test, axis=3)
     y_test = y_test.reshape(-1, 1)
-    
+
     return X_train, y_train, X_test, y_test
-    
+
 if __name__ == '__main__':
     X_train, y_train, X_test, y_test = load_data()
-    
+
     # Instanciate a compiled model
-    dcgan = DCGAN()
-    
+    sgan = SGAN()
+
     start = time.time()
-    
-    # Fit/Train the model    
-    dcgan.train(X_train, y_train, epochs=650, batch_size=32, save_interval=50)
-            
+
+    # Fit/Train the model
+    sgan.train(X_train, y_train, epochs=20, batch_size=32, save_interval=50)
+
     end = time.time()
     print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
-    
-    # plot training graph        
-    dcgan.plot_training_history()
-    
+
+    # plot training graph
+    sgan.plot_training_history()
+
     #evaluate the trained D model w.r.t unseen data (i.e. testing set)
-    
-    dcgan.evaluate_discriminator(X_test, y_test)
-    
-    dcgan.predict(X_test, y_test)
-      
+
+    sgan.evaluate_discriminator(X_test, y_test)
+
+    sgan.predict(X_test, y_test)
+
     #saved the trained model
-    dcgan.save_model()
+    sgan.save_model()

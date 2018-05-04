@@ -1,5 +1,3 @@
-title:
-Generative Adversarial Networks (GAN) for Nuclei detection
 
 GAN: A Beginner’s Guide to Generative Adversarial Networks
 https://deeplearning4j.org/generative-adversarial-network
@@ -15,6 +13,3 @@ https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4729702/
 Can Generative Adversarial networks use multi-class labels?
 https://www.quora.com/Can-Generative-Adversarial-networks-use-multi-class-labels
 
-
-From GAN to WGAN
-https://lilianweng.github.io/lil-log/2017/08/20/from-GAN-to-WGAN.html
