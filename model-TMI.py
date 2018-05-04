@@ -5,7 +5,7 @@ from keras.layers import Input, Dense, Reshape, Flatten, Dropout
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, model_from_json
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 
@@ -14,6 +14,7 @@ from skimage.transform import resize
 import scipy.io
 
 import matplotlib.pyplot as plt
+import itertools
 import numpy as np
 import time
 import shutil
@@ -230,7 +231,6 @@ class DCGAN():
                 self.save_imgs(epoch)
 
     def evaluate_discriminator(self, X_test, y_test):
-
         valid = np.ones((y_test.shape[0], 1))
 
         # Convert labels to categorical one-hot encoding
@@ -248,9 +248,9 @@ class DCGAN():
         noise = np.random.normal(0, 1, (r * c, 100))
         gen_imgs = self.generator.predict(noise)
 
-        # Rescale images 0 - 1
-        gen_imgs = 0.5 * gen_imgs + 1
-
+        # Rescale images
+        gen_imgs = 0.5 * gen_imgs + 0.5
+        
         fig, axs = plt.subplots(r, c)
         cnt = 0
         for i in range(r):
@@ -303,33 +303,74 @@ class DCGAN():
         plt.show()
 
     def predict(self, X_test, y_test):
+        
         # Generating a predictions from the discriminator over the testing dataset
         y_pred = self.discriminator.predict(X_test)
 
         # Formating predictions to remove the one_hot_encoding format
         y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
-
+        
         print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred) * 100))
 
         # Calculating and ploting a Classification Report
-        target_names = ['class 0', 'class 1', 'class 2', 'class 3', 'class 4', 'class 5', 'class 6', 'class 7', 'class 8', 'class 9']
+        class_names = ['Non-nunclei', 'Nuclei']
         print("Classification report:\n %s\n"
-              % (classification_report(y_test, y_pred, target_names=target_names)))
+              % (classification_report(y_test, y_pred, target_names=class_names)))
 
         # Calculating and ploting Confusion Matrix
         cm = confusion_matrix(y_test, y_pred)
-#        print("Confusion matrix:\n%s" % cm)
+        print("Confusion matrix:\n%s" % cm)
+        
+        
+        
+        plt.figure()
+        plot_confusion_matrix(cm, class_names, title='Confusion matrix, without normalization')
+        
+        plt.figure()
+        plot_confusion_matrix(cm, class_names, normalize=True, title='Normalized confusion matrix')
+        
+        
+    def load_wights(self):
+        # load weights into new model
+        self.generator.load_weights("./TMI_saved_models/TMI_gan_generator_weights.hdf5")
+        self.discriminator.load_weights("./TMI_saved_models/TMI_gan_discriminator_weights.hdf5")
+        self.combined.load_weights("./TMI_saved_models/TMI_gan_adversarial_weights.hdf5")
+        print("Weights loaded from disk")
 
-        plt.figure(figsize=(10,5))
-        plt.matshow(cm, fignum=1)
-        plt.title('Confusion matrix\n')
-        plt.colorbar()
-        plt.ylabel('True label')
-        plt.xlabel('Predicted label')
-        plt.xticks(np.arange(min(y_test), max(y_test)+1, 1.0))
-        plt.yticks(np.arange(min(y_test), max(y_test)+1, 1.0))
-        plt.show()
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
 
+    print(cm)
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+ 
 def load_TMI_data():
     # Load the dataset
     dataset = scipy.io.loadmat('TMI2015/training/training.mat')
@@ -343,7 +384,10 @@ def load_TMI_data():
 
     # Normalize values from -1 to 1
     y_train = np.asarray(y_train).reshape(-1, 1)
-    y_test = np.asarray(y_test).reshape(-1, 1)       
+    y_test = np.asarray(y_test).reshape(-1, 1)
+
+    y_test -= 1       
+    y_train -= 1  
     
     # Resize to 32x32
     X_train_resized = np.empty([X_train.shape[0], 32, 32, X_train.shape[3]])
@@ -355,30 +399,30 @@ def load_TMI_data():
         X_test_resized[i] = resize(X_test[i], (32, 32, 3), mode='reflect')
         
     #Plotting a sample data:
-    r, c = 5, 5
-    fig, axs = plt.subplots(r, c)
-    
-    cnt = 0
-    for i in range(r):
-        for j in range(c):
-            axs[i,j].imshow(X_train[np.random.randint(0,6000), :,:])
-            axs[i,j].axis('off')
-            cnt += 1
-    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
-    plt.suptitle('Non-nuclei Training Sample - label = 1')
-    plt.show()
-    
-    r, c = 5, 5
-    fig, axs = plt.subplots(r, c)
-    cnt = 0
-    for i in range(r):
-        for j in range(c):
-            axs[i,j].imshow(X_train[np.random.randint(6000,8000), :,:])
-            axs[i,j].axis('off')
-            cnt += 1
-    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
-    plt.suptitle('Nuclei Training Sample - label = 2')
-    plt.show()
+#    r, c = 5, 5
+#    fig, axs = plt.subplots(r, c)
+#    
+#    cnt = 0
+#    for i in range(r):
+#        for j in range(c):
+#            axs[i,j].imshow(X_train[np.random.randint(0,6000), :,:])
+#            axs[i,j].axis('off')
+#            cnt += 1
+#    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
+#    plt.suptitle('Non-nuclei Training Sample - label = 1')
+#    plt.show()
+#    
+#    r, c = 5, 5
+#    fig, axs = plt.subplots(r, c)
+#    cnt = 0
+#    for i in range(r):
+#        for j in range(c):
+#            axs[i,j].imshow(X_train[np.random.randint(6000,8000), :,:])
+#            axs[i,j].axis('off')
+#            cnt += 1
+#    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
+#    plt.suptitle('Nuclei Training Sample - label = 2')
+#    plt.show()
     
     return X_train_resized, y_train, X_test_resized, y_test
 
@@ -389,22 +433,27 @@ if __name__ == '__main__':
     # Instanciate a compiled model
     dcgan = DCGAN()
 
-    start = time.time()
 
-    # Fit/Train the model
-    dcgan.train(X_train, y_train, epochs=1000, batch_size=32, save_interval=50)
-
-    end = time.time()
-    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
-
-#    # plot training graph
-#    dcgan.plot_training_history()
+    dcgan.load_wights()
+    
+#    start = time.time()
 #
-#    #evaluate the trained D model w.r.t unseen data (i.e. testing set)
+#    # Fit/Train the model
+#    dcgan.train(X_train, y_train, epochs=10, batch_size=32, save_interval=50)
 #
-#    dcgan.evaluate_discriminator(X_test, y_test)
-#
-#    dcgan.predict(X_test, y_test)
-#
+#    end = time.time()
+#    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
+#    
 #    #saved the trained model
 #    dcgan.save_model()
+
+    # plot training graph
+#    dcgan.plot_training_history()
+
+    #evaluate the trained D model w.r.t unseen data (i.e. testing set)
+
+    dcgan.evaluate_discriminator(X_test, y_test)
+
+    dcgan.predict(X_test, y_test)
+
+    

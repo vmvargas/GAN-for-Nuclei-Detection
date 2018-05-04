@@ -348,7 +348,7 @@ if __name__ == '__main__':
     start = time.time()
     
     # Fit/Train the model    
-    dcgan.train(X_train, y_train, epochs=1250, batch_size=32, save_interval=50)
+    dcgan.train(X_train, y_train, epochs=650, batch_size=32, save_interval=50)
             
     end = time.time()
     print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
