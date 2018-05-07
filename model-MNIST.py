@@ -71,8 +71,8 @@ class SGAN():
         # noise as input => generates images => determines validity
         self.combined = Model(z, valid)
 
-        plot_path = "combined.png"
-        plot_model(self.combined, to_file=plot_path, show_shapes=True, show_layer_names=True)
+#        plot_path = "combined.png"
+#        plot_model(self.combined, to_file=plot_path, show_shapes=True, show_layer_names=True)
 
         self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
 
@@ -100,8 +100,8 @@ class SGAN():
         model.add(Conv2D(self.channels, kernel_size=3, padding="same"))
         model.add(Activation("tanh"))
 
-        plot_path = "generator.png"
-        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
+#        plot_path = "generator.png"
+#        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
 
 #        model.summary()
 
@@ -153,8 +153,8 @@ class SGAN():
 
         model.add(Flatten())
 #        model.summary()
-        plot_path = "discriminator.png"
-        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
+#        plot_path = "discriminator.png"
+#        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
 
         # instantiate a Keras tensor
         img = Input(shape=img_shape)
@@ -359,7 +359,7 @@ if __name__ == '__main__':
     start = time.time()
 
     # Fit/Train the model
-    sgan.train(X_train, y_train, epochs=20, batch_size=32, save_interval=50)
+    sgan.train(X_train, y_train, epochs=1250, batch_size=32, save_interval=50)
 
     end = time.time()
     print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))

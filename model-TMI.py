@@ -5,7 +5,7 @@ from keras.layers import Input, Dense, Reshape, Flatten, Dropout
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Sequential, Model, model_from_json
+from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 
@@ -50,14 +50,14 @@ class SGAN():
         # Compile discriminator's model, i.e. define its learning process
         # binary crossentropy is used to distinguish among real or fake samples
         # categorical entropy is to distinguish among which real category is (nuclei or non-nuclei)
-        self.discriminator.compile(loss=['binary_crossentropy', 'categorical_crossentropy'],
-            loss_weights=[0.5, 0.5],
-            optimizer=optimizer,
-            metrics=['accuracy'])
+        self.discriminator.compile(
+                loss=['binary_crossentropy', 'categorical_crossentropy'],
+                loss_weights=[0.5, 0.5],
+                optimizer=optimizer,
+                metrics=['accuracy'])
 
-        # Build and compile the generator
+        # Build the generator
         self.generator = self.build_generator()
-        self.generator.compile(loss='binary_crossentropy', optimizer=optimizer)
 
         # The generator takes noise as input and generates imgs
         z = Input(shape=(100,))
@@ -72,7 +72,9 @@ class SGAN():
         # The combined model  (stacked generator and discriminator) takes
         # noise as input => generates images => determines validity
         self.combined = Model(z, valid)
-        self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+        self.combined.compile(
+                loss=['binary_crossentropy'], 
+                optimizer=optimizer)
 
     def build_generator(self):
         # This model replaced any pooling layers with strided convolutions
@@ -81,6 +83,7 @@ class SGAN():
         model = Sequential()
 
         model.add(Dense(128 * 8 * 8, activation="relu", input_dim=100))
+        
         model.add(Reshape((8, 8, 128)))
         model.add(BatchNormalization(momentum=0.8))
 
@@ -166,7 +169,7 @@ class SGAN():
         # Once instantiated, this model will include all layers required in the computation of y given x.
         return Model(img, [valid, label])
 
-    def train(self, X_train, y_train, epochs, batch_size, save_interval):
+    def train(self, X_train, y_train, X_test, y_test, epochs, batch_size, save_interval):
 
         # delete directory if exist and create it
         shutil.rmtree('TMI_generators_output', ignore_errors=True)
@@ -212,24 +215,25 @@ class SGAN():
             # ---------------------
             #  Train Generator
             # ---------------------
-
-            noise = np.random.normal(0, 1, (batch_size, 100))
             validity = np.ones((batch_size, 1))
-
-            # Train the generator (wants discriminator to mistake images as real)
-            g_loss = self.combined.train_on_batch(noise, validity, class_weight=[cw1, cw2])
+            
+            for i in range(10):
+                noise = np.random.normal(0, 1, (batch_size, 100))
+                # Train the generator (wants discriminator to mistake images as real)
+                g_loss = self.combined.train_on_batch(noise, validity, class_weight=[cw1, cw2])
 
             self.training_history["D_loss"].append(d_loss[0]);
             self.training_history["D_acc"].append(100*d_loss[3]);
             self.training_history["G_loss"].append(g_loss);
             self.training_history["G_acc"].append(100*d_loss[4]);
 
+            print ("%d: Training D [loss: %.4f, acc: %.2f%% ] - G [loss: %.4f, acc: %.2f%%]" % (epoch, d_loss[0], 100*d_loss[3], g_loss, 100*d_loss[4]))
+            self.evaluate_discriminator(X_test, y_test)
+
             # If at save interval => save generated image samples
             if epoch % save_interval == 0:
-                # Plot the progress
-                print ("%d: Training D [loss: %.4f, acc: %.2f%% ] - G [loss: %.4f, acc: %.2f%%]" % (epoch, d_loss[0], 100*d_loss[3], g_loss, 100*d_loss[4]))
                 self.save_imgs(epoch)
-
+                
     def evaluate_discriminator(self, X_test, y_test):
         valid = np.ones((y_test.shape[0], 1))
 
@@ -237,9 +241,11 @@ class SGAN():
         labels = to_categorical(y_test, num_classes=self.num_classes+1)
 
         #  Evaluating the trained Discriminator
-        scores = self.discriminator.evaluate(X_test, [valid, labels])
+        scores = self.discriminator.evaluate(X_test, [valid, labels], verbose=0)
 
-        print("\nEvaluating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
+        print("Evaluating D [loss:  %.4f, bi-loss: %.4f, cat-loss: %.4f, bi-acc: %.2f%%, cat-acc: %.2f%%]\n" %
+              (scores[0], scores[1], scores[2], scores[3]*100, scores[4]*100))
+#        print("\nEvaluating D [loss:  %.4f, acc: %.2f%%]" % (scores[0], scores[3]*100))
 
         return (scores[0], scores[3]*100)
 
@@ -248,7 +254,7 @@ class SGAN():
         noise = np.random.normal(0, 1, (r * c, 100))
         gen_imgs = self.generator.predict(noise)
 
-        # Rescale images
+        # Rescale images from [-1..1] to [0..1] just to display purposes.
         gen_imgs = 0.5 * gen_imgs + 0.5
 
         fig, axs = plt.subplots(r, c)
@@ -319,16 +325,13 @@ class SGAN():
 
         # Calculating and ploting Confusion Matrix
         cm = confusion_matrix(y_test, y_pred)
-        print("Confusion matrix:\n%s" % cm)
-
-
+#        print("Confusion matrix:\n%s" % cm)
 
         plt.figure()
         plot_confusion_matrix(cm, class_names, title='Confusion matrix, without normalization')
 
         plt.figure()
         plot_confusion_matrix(cm, class_names, normalize=True, title='Normalized confusion matrix')
-
 
     def load_wights(self):
         # load weights into new model
@@ -347,11 +350,6 @@ def plot_confusion_matrix(cm, classes,
     """
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        print("Normalized confusion matrix")
-    else:
-        print('Confusion matrix, without normalization')
-
-    print(cm)
 
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
@@ -375,17 +373,18 @@ def load_TMI_data():
     # Load the dataset
     dataset = scipy.io.loadmat('TMI2015/training/training.mat')
 
-    # Split into train and test
+    # Split into train and test. Values are in range [0..1] as float64
     X_train = np.transpose(dataset['train_x'], (3, 0, 1, 2))
     y_train = list(dataset['train_y'][0])
-
+    
     X_test = np.transpose(dataset['test_x'], (3, 0, 1, 2))
     y_test = list(dataset['test_y'][0])
-
-    # Normalize values from -1 to 1
+    
+    # Change shape and range. 
     y_train = np.asarray(y_train).reshape(-1, 1)
     y_test = np.asarray(y_test).reshape(-1, 1)
 
+#   1-> 0 : Non-nuclei. 2 -> 1: Nuclei
     y_test -= 1
     y_train -= 1
 
@@ -405,7 +404,7 @@ def load_TMI_data():
 #    cnt = 0
 #    for i in range(r):
 #        for j in range(c):
-#            axs[i,j].imshow(X_train[np.random.randint(0,6000), :,:])
+#            axs[i,j].imshow(X_train_resized[np.random.randint(0,6000)])
 #            axs[i,j].axis('off')
 #            cnt += 1
 #    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
@@ -417,12 +416,16 @@ def load_TMI_data():
 #    cnt = 0
 #    for i in range(r):
 #        for j in range(c):
-#            axs[i,j].imshow(X_train[np.random.randint(6000,8000), :,:])
+#            axs[i,j].imshow(X_train_resized[np.random.randint(6000,8000)])
 #            axs[i,j].axis('off')
 #            cnt += 1
 #    fig.savefig("./TMI_generators_output/tmi_training_random_sample.png")
 #    plt.suptitle('Nuclei Training Sample - label = 2')
 #    plt.show()
+    
+    # Normalize images from [0..1] to [-1..1]
+    X_train_resized = 2 * X_train_resized - 1
+    X_test_resized = 2 * X_test_resized - 1
 
     return X_train_resized, y_train, X_test_resized, y_test
 
@@ -430,29 +433,28 @@ if __name__ == '__main__':
 
     X_train, y_train, X_test, y_test = load_TMI_data()
 
-    # Instanciate a compiled model
-#    sgan = SGAN()
-
+#    Instanciate a compiled model
+    sgan = SGAN()
 
 #    sgan.load_wights()
 
-#    start = time.time()
-#
-#    # Fit/Train the model
-#    sgan.train(X_train, y_train, epochs=10, batch_size=32, save_interval=50)
-#
-#    end = time.time()
-#    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
-#
-#    #saved the trained model
-#    sgan.save_model()
+    start = time.time()
+    
+    epochs=200
+    # Fit/Train the model
+    sgan.train(X_train, y_train, X_test, y_test, epochs, batch_size=32, save_interval=5)
 
-    # plot training graph
-#    sgan.plot_training_history()
+    end = time.time()
+    print ("\nTraining time: %0.1f minutes \n" % ((end-start) / 60))
 
-    #evaluate the trained D model w.r.t unseen data (i.e. testing set)
+    #saved the trained model
+    sgan.save_model()
 
-#    sgan.evaluate_discriminator(X_test, y_test)
-#
-#    sgan.predict(X_test, y_test)
+#    plot training graph
+    sgan.plot_training_history()
 
+#    evaluate the trained D model w.r.t unseen data (i.e. testing set)
+
+    sgan.evaluate_discriminator(X_test, y_test)
+
+    sgan.predict(X_test, y_test)
