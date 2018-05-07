@@ -1,7 +1,5 @@
 # Nuclei dataset
-TMI2015/ 
-SGAN/
-generators_output/*
+TMI2015/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
