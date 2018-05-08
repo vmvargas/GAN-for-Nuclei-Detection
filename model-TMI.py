@@ -8,8 +8,8 @@ from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
-
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from keras.utils.vis_utils import plot_model
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, average_precision_score
 from skimage.transform import resize
 import scipy.io
 
@@ -104,6 +104,9 @@ class SGAN():
         #flatten to the amount of channels
         model.add(Conv2D(self.channels, kernel_size=3, padding="same"))
         model.add(Activation("tanh"))
+        
+#        plot_path = "generator.png"
+#        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
 
         #model.summary()
 
@@ -155,6 +158,9 @@ class SGAN():
 
         model.add(Flatten())
         #model.summary()
+#        plot_path = "discriminator.png"
+#        plot_model(model, to_file=plot_path, show_shapes=True, show_layer_names=True)
+
 
         # instantiate a Keras tensor
         img = Input(shape=img_shape)
@@ -178,8 +184,8 @@ class SGAN():
         half_batch = int(batch_size / 2)
 
         # Class weights:
-        # To balance the difference in occurences of digit class labels.
-        # 50% of labels that the discriminator trains on are 'fake'.
+        # To balance the difference in occurences of class labels.
+        # 50% of labels that D trains on are 'fake'.
         # Weight = 1 / frequency
         cw1 = {0: 1, 1: 1}
         cw2 = {i: self.num_classes / half_batch for i in range(self.num_classes)}
@@ -187,7 +193,7 @@ class SGAN():
 
         for epoch in range(epochs):
             # ---------------------
-            #  Train Discriminator
+            #  Training the Discriminator
             # ---------------------
 
             # Select a random half batch of images
@@ -213,7 +219,7 @@ class SGAN():
             d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
             # ---------------------
-            #  Train Generator
+            #  Training the Generator
             # ---------------------
             validity = np.ones((batch_size, 1))
             
@@ -317,7 +323,8 @@ class SGAN():
         y_pred = np.argmax(y_pred[1][:,:-1], axis=1)
 
         print ('\nOverall accuracy: %f%% \n' % (accuracy_score(y_test, y_pred) * 100))
-
+        print ('\nAveP: %f%% \n' % (average_precision_score(y_test, y_pred) * 100))
+        
         # Calculating and ploting a Classification Report
         class_names = ['Non-nunclei', 'Nuclei']
         print("Classification report:\n %s\n"
@@ -384,7 +391,7 @@ def load_TMI_data():
     y_train = np.asarray(y_train).reshape(-1, 1)
     y_test = np.asarray(y_test).reshape(-1, 1)
 
-#   1-> 0 : Non-nuclei. 2 -> 1: Nuclei
+#   1-> 0 : Non-nucleus. 2 -> 1: Nucleus
     y_test -= 1
     y_train -= 1
 
