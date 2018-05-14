@@ -1,1 +1,8 @@
-sklearn matplotlib h5py scikit-image pydot graphviz
+numpy>=1.12.1
+matplotlib
+tensorflow>=1.3.0
+keras
+sklearn
+scipy
+h5py
+scikit-image
